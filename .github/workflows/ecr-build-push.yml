@@ -1,0 +1,59 @@
+name: Build and Push Flask App to ECR # Nombre del flujo de trabajo
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  ECR_REPOSITORY: ${{ secres.REPO_NAME }}
+  SERVICE_NAME: web
+  IMAGE_TAG: latest
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR # Inicia sesión en ECR
+        id: login-ecr # Asigna un ID a este paso para referenciar sus salidas
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image using Docker Compose # Construye la imagen usando Docker Compose
+        run: |
+          # Construye la imagen para el servicio especificado en SERVICE_NAME
+          docker-compose build ${{ env.SERVICE_NAME }}
+
+      - name: Tag and Push Docker image to ECR # Etiqueta y empuja la imagen a ECR
+        run: |
+          # Obtiene el ID de la imagen que Docker Compose acaba de construir para el servicio.
+          # Esto es más robusto que asumir un nombre de imagen local.
+          IMAGE_ID=$(docker images -q $(docker-compose config --services ${{ env.SERVICE_NAME }}))
+
+          # Define el URI completo de la imagen ECR para la etiqueta principal
+          ECR_FULL_IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+
+          # Define el URI completo de la imagen ECR para la etiqueta con el SHA del commit
+          ECR_FULL_IMAGE_URI_SHA="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+
+          # Etiqueta la imagen local con los URIs completos de ECR
+          docker tag ${IMAGE_ID} ${ECR_FULL_IMAGE_URI}
+          docker tag ${IMAGE_ID} ${ECR_FULL_IMAGE_URI_SHA}
+
+          # Empuja las imágenes a ECR
+          docker push ${ECR_FULL_IMAGE_URI}
+          docker push ${ECR_FULL_IMAGE_URI_SHA}
