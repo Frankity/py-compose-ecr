@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  ECR_REPOSITORY: ${{ env.REPO_NAME }} # ¡IMPORTANTE! Reemplaza con el nombre exacto de tu repositorio ECR en AWS
+  ECR_REPOSITORY: ${{ secrets.REPO_NAME }} # ¡IMPORTANTE! Reemplaza con el nombre exacto de tu repositorio ECR en AWS
   SERVICE_NAME: web # Nombre del servicio en tu docker-compose.yml que quieres construir
   IMAGE_TAG: latest # Etiqueta principal de la imagen (ej. 'latest'). Puedes usar ${{ github.sha }} para el hash del commit.
 
