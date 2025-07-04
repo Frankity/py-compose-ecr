@@ -10,9 +10,6 @@ env:
   ECR_REPOSITORY: ${{ secrets.REPO_NAME }} # ¡IMPORTANTE! Reemplaza con el nombre exacto de tu repositorio ECR en AWS
   SERVICE_NAME: web # Nombre del servicio en tu docker-compose.yml que quieres construir
   IMAGE_TAG: latest # Etiqueta principal de la imagen (ej. 'latest'). Puedes usar ${{ github.sha }} para el hash del commit.
-  # Nueva variable para el URI base de ECR
-  # Se poblará en el paso de login para asegurar que es el correcto
-  ECR_REGISTRY_URI: "" # Dejar vacío, se llenará con la salida del login
 
 jobs:
   build:
@@ -38,55 +35,39 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-        # Captura la URL completa del registro ECR en una variable de entorno
-        # para que esté disponible en los pasos siguientes.
-        # Esto asegura que tengas el prefijo correcto para el nombre de la imagen.
-      - name: Set ECR Registry URI
-        run: echo "ECR_REGISTRY_URI=${{ steps.login-ecr.outputs.registry }}" >> $GITHUB_ENV
 
-      - name: Build and Push Docker image to ECR
+      - name: Build Docker image using Docker Compose # Modificamos ligeramente este paso
         run: |
-          # Define el URI completo de la imagen ECR usando la variable de entorno
-          # que ahora tiene el prefijo de tu registro ECR.
-          ECR_FULL_IMAGE_URI="${{ env.ECR_REGISTRY_URI }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
-          ECR_FULL_IMAGE_URI_SHA="${{ env.ECR_REGISTRY_URI }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          # Construye la imagen para el servicio especificado.
+          # Docker Compose la nombrará por defecto como <nombre_directorio_proyecto>_<nombre_servicio>
+          docker compose build ${{ env.SERVICE_NAME }}
 
-          # Construye la imagen directamente con el nombre de destino de ECR.
-          # Usamos --build-arg o podemos pasar un tag directamente si tu docker-compose.yml lo soporta.
-          # La forma más directa es construirla y luego etiquetarla con el nombre completo.
-          # Sin embargo, si docker-compose build no etiqueta con un nombre útil,
-          # es mejor usar 'docker build' o asegurar que 'docker compose build' lo haga.
+          # Obtiene el nombre de la imagen que Docker Compose acaba de construir.
+          # El nombre por defecto es <nombre_del_directorio_del_repo>_<nombre_del_servicio_en_compose>
+          # 'basename ${{ github.repository }}' obtiene solo el nombre del repo (ej. 'py-compose-ecr')
+          REPO_NAME=$(basename ${{ github.repository }})
+          # El nombre completo de la imagen local debería ser:
+          LOCAL_IMAGE_NAME="${REPO_NAME}_${{ env.SERVICE_NAME }}"
 
-          # Volvamos a la estrategia de etiquetar, pero asegurándonos de que Docker Compose
-          # construya una imagen con un nombre predecible.
-          # Por defecto, docker-compose build crea una imagen con el formato
-          # <nombre_directorio_proyecto>_<nombre_servicio>
-          # Podemos forzar el nombre de la imagen en el docker-compose.yml para que sea directo.
-          # Primero, modificaremos el docker-compose.yml ligeramente.
+          echo "LOCAL_IMAGE_NAME=${LOCAL_IMAGE_NAME}" >> $GITHUB_ENV # Pasa la variable al entorno para el siguiente paso
 
-          # PASO INTERMEDIO: Modifica tu docker-compose.yml para especificar el nombre de la imagen
-          # Antes de este paso en GitHub Actions, asegura que tu docker-compose.yml tenga esto:
-          # services:
-          #   web:
-          #     build: .
-          #     image: ${ECR_REGISTRY_URI}/${ECR_REPOSITORY}:${IMAGE_TAG} # <-- AÑADE ESTO (o similar)
-          #     ports:
-          #       - "8000:8000"
-          #     restart: always
-          #
-          # Con esta modificación en docker-compose.yml, el build ya creará la imagen con el nombre esperado.
+      - name: Tag and Push Docker image to ECR
+        run: |
+          # Ahora usamos LOCAL_IMAGE_NAME que obtuvimos del paso anterior
+          # El 'latest' o cualquier tag que docker-compose le puso por defecto
+          # también debe incluirse en la imagen de origen.
+          SOURCE_IMAGE_WITH_TAG="${{ env.LOCAL_IMAGE_NAME }}:latest" # Asumimos que docker-compose build etiqueta con 'latest' por defecto
 
-          # --- Nuevo comando de construcción, ahora la imagen ya tiene el nombre de ECR ---
-          # Asegúrate que las variables de entorno ECR_REGISTRY_URI, ECR_REPOSITORY y IMAGE_TAG
-          # estén disponibles para docker-compose. Las pasamos explícitamente.
-          docker compose build ${{ env.SERVICE_NAME }} \
-            --build-arg ECR_REGISTRY_URI="${{ env.ECR_REGISTRY_URI }}" \
-            --build-arg ECR_REPOSITORY="${{ env.ECR_REPOSITORY }}" \
-            --build-arg IMAGE_TAG="${{ env.IMAGE_TAG }}"
+          # Define el URI completo de la imagen ECR para la etiqueta principal
+          ECR_FULL_IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
 
-          # Una vez construida, solo necesitamos re-etiquetar para la versión con SHA y luego empujar
-          # El nombre de la imagen local debería ser ahora ECR_FULL_IMAGE_URI
-          docker tag ${ECR_FULL_IMAGE_URI} ${ECR_FULL_IMAGE_URI_SHA}
+          # Define el URI completo de la imagen ECR para la etiqueta con el SHA del commit
+          ECR_FULL_IMAGE_URI_SHA="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
 
+          # Etiqueta la imagen local con los URIs completos de ECR
+          docker tag ${SOURCE_IMAGE_WITH_TAG} ${ECR_FULL_IMAGE_URI}
+          docker tag ${SOURCE_IMAGE_WITH_TAG} ${ECR_FULL_IMAGE_URI_SHA}
+
+          # Empuja las imágenes a ECR
           docker push ${ECR_FULL_IMAGE_URI}
           docker push ${ECR_FULL_IMAGE_URI_SHA}
