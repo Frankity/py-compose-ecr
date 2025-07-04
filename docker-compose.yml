@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   web: # Nombre de tu servicio (el mismo que usaremos en GitHub Actions)
     build: . # Construye la imagen desde el Dockerfile en el directorio actual
