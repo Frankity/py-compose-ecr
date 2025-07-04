@@ -1,4 +1,4 @@
-name: Build and Push Flask App to ECR # Nombre del flujo de trabajo
+name: Build and Push Flask App to ECR
 
 on:
   push:
@@ -22,6 +22,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # --- NUEVO PASO AQUÍ ---
+      - name: Set up Docker Buildx (and Docker Compose)
+        uses: docker/setup-buildx-action@v3
+        # No necesitas configurar una versión específica de Docker Compose aquí,
+        # esta acción a menudo instala Docker Compose v2 (docker compose) automáticamente.
+        # Si prefieres la versión v1 (docker-compose), puedes usar 'docker/setup-docker@v3'
+        # o instalarla manualmente con un script, pero buildx es más moderno.
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -29,31 +37,27 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to Amazon ECR # Inicia sesión en ECR
-        id: login-ecr # Asigna un ID a este paso para referenciar sus salidas
+      - name: Login to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Docker image using Docker Compose # Construye la imagen usando Docker Compose
+      - name: Build Docker image using Docker Compose
         run: |
-          # Construye la imagen para el servicio especificado en SERVICE_NAME
-          docker-compose build ${{ env.SERVICE_NAME }}
+          # Ahora, el comando 'docker compose' (versión 2) o 'docker-compose' (versión 1) debería funcionar.
+          # La acción docker/setup-buildx-action@v3 generalmente instala docker compose V2.
+          # Por lo tanto, el comando recomendado es 'docker compose' (sin guion).
+          docker compose build ${{ env.SERVICE_NAME }} # <--- ¡Cambiado a 'docker compose' sin guion!
 
-      - name: Tag and Push Docker image to ECR # Etiqueta y empuja la imagen a ECR
+      - name: Tag and Push Docker image to ECR
         run: |
-          # Obtiene el ID de la imagen que Docker Compose acaba de construir para el servicio.
-          # Esto es más robusto que asumir un nombre de imagen local.
-          IMAGE_ID=$(docker images -q $(docker-compose config --services ${{ env.SERVICE_NAME }}))
+          # Obtiene el ID de la imagen que Docker Compose acaba de construir.
+          IMAGE_ID=$(docker images -q $(docker compose config --services ${{ env.SERVICE_NAME }})) # <--- ¡Cambiado aquí también!
 
-          # Define el URI completo de la imagen ECR para la etiqueta principal
           ECR_FULL_IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
-
-          # Define el URI completo de la imagen ECR para la etiqueta con el SHA del commit
           ECR_FULL_IMAGE_URI_SHA="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
 
-          # Etiqueta la imagen local con los URIs completos de ECR
           docker tag ${IMAGE_ID} ${ECR_FULL_IMAGE_URI}
           docker tag ${IMAGE_ID} ${ECR_FULL_IMAGE_URI_SHA}
 
-          # Empuja las imágenes a ECR
           docker push ${ECR_FULL_IMAGE_URI}
           docker push ${ECR_FULL_IMAGE_URI_SHA}
