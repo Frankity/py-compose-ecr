@@ -1,0 +1,8 @@
+version: "3.8"
+
+services:
+  web: # Nombre de tu servicio (el mismo que usaremos en GitHub Actions)
+    build: . # Construye la imagen desde el Dockerfile en el directorio actual
+    ports:
+      - "8000:8000" # Mapea el puerto 8000 del host al puerto 8000 del contenedor
+    restart: always # Reinicia el contenedor si falla
