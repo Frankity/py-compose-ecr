@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  ECR_REPOSITORY: ${{ secres.REPO_NAME }}
+  ECR_REPOSITORY: ${{ secrets.REPO_NAME }}
   SERVICE_NAME: web
   IMAGE_TAG: latest
 
