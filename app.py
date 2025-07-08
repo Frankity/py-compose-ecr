@@ -8,7 +8,7 @@ def home():
 
 @app.route('/saludo/<nombre>')
 def saludo(nombre):
-    return jsonify(message=f"¡Hola, {nombre}!")
+    return jsonify(message=f"¡Hola, {nombre}! como estas?")
 
 @app.route('/info')
 def info():
