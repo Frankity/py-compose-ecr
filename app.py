@@ -4,7 +4,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return jsonify(message="¡Hola desde el backend hecho en Python")
+    return jsonify(message="¡Hola desde el backend")
 
 @app.route('/saludo/<nombre>')
 def saludo(nombre):
