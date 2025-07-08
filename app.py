@@ -15,7 +15,7 @@ def info():
     return jsonify(
         api_name="Simple Flask Backend",
         version="1.0.0",
-        description="Un pequeño backend de ejemplo para demostrar Flask y Docker."
+        description="Un pequeño backend de ejemplo para demostrar Flask y Docker ECR y demas."
     )
 
 if __name__ == '__main__':
