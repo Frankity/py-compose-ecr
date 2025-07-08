@@ -1,4 +1,4 @@
-name: Build and Push Flask App to ECR
+name: Build and Push Flask App to ECR (Multi-arch)
 
 on:
   push:
@@ -10,6 +10,8 @@ env:
   ECR_REPOSITORY: ${{ secrets.REPO_NAME }} # ¡IMPORTANTE! Reemplaza con el nombre exacto de tu repositorio ECR en AWS
   SERVICE_NAME: web # Nombre del servicio en tu docker-compose.yml que quieres construir
   IMAGE_TAG: latest # Etiqueta principal de la imagen (ej. 'latest'). Puedes usar ${{ github.sha }} para el hash del commit.
+  # Define las plataformas objetivo para la construcción de la imagen
+  PLATFORMS: linux/amd64,linux/arm64/v8
 
 jobs:
   build:
@@ -22,7 +24,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx (and Docker Compose)
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS credentials
@@ -36,55 +38,28 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Docker image using Docker Compose # Construimos y capturamos el ID
-        id: build-image # Añadimos un ID para capturar salidas
+      - name: Build and Push Docker image to ECR (Multi-arch)
+        # No necesitamos un paso intermedio de 'build' y luego 'tag/push'.
+        # buildx puede construir y empujar directamente.
         run: |
-          # Construye la imagen para el servicio especificado.
-          # La salida de este comando a veces puede incluir el ID de la imagen.
-          docker compose build ${{ env.SERVICE_NAME }}
+          # Obtiene el URI completo del registro ECR
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          
+          # Define el nombre completo de la imagen en ECR
+          IMAGE_NAME="${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}"
 
-          # ¡ESTA ES LA PARTE CLAVE!
-          # Obtenemos el ID de la imagen recién construida usando docker images.
-          # Filtramos por las imágenes sin nombre (<none>) que a menudo son el resultado de 'docker compose build'
-          # o por el nombre esperado si lo tuviera.
-          # Ordenamos por fecha de creación descendente y tomamos el ID más reciente.
-          # 'grep $(basename ${{ github.repository }})' ayuda a filtrar por el nombre del repo
-          # si docker compose le da un nombre como 'py-compose-ecr_web'
-          IMAGE_ID=$(docker images --format "{{.ID}}\t{{.Repository}}\t{{.Tag}}" | grep "$(basename ${{ github.repository }})_${{ env.SERVICE_NAME}}" | head -n 1 | awk '{print $1}')
+          echo "Building and pushing image for platforms: ${{ env.PLATFORMS }}"
+          echo "Image name: ${IMAGE_NAME}"
 
-          # Si el comando anterior no encuentra la imagen por nombre, probamos con la imagen más reciente sin tag
-          if [ -z "${IMAGE_ID}" ]; then
-            IMAGE_ID=$(docker images --filter "dangling=false" --format "{{.ID}}\t{{.CreatedAt}}" | sort -k2 -r | head -n 1 | awk '{print $1}')
-            echo "Advertencia: No se encontró la imagen por nombre. Usando la imagen construida más recientemente con ID: ${IMAGE_ID}"
-          fi
-
-          if [ -z "${IMAGE_ID}" ]; then
-            echo "Error: No se pudo obtener el ID de la imagen construida."
-            exit 1
-          fi
-
-          echo "::set-output name=image_id::${IMAGE_ID}" # Pasa el ID de la imagen como una salida del paso
-
-      - name: Tag and Push Docker image to ECR
-        run: |
-          # Obtiene el ID de la imagen del paso anterior
-          IMAGE_ID="${{ steps.build-image.outputs.image_id }}"
-
-          if [ -z "${IMAGE_ID}" ]; then
-            echo "Error: El ID de la imagen está vacío. No se puede etiquetar ni empujar."
-            exit 1
-          fi
-
-          # Define el URI completo de la imagen ECR para la etiqueta principal
-          ECR_FULL_IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
-
-          # Define el URI completo de la imagen ECR para la etiqueta con el SHA del commit
-          ECR_FULL_IMAGE_URI_SHA="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
-
-          # Etiqueta la imagen local usando su ID (la forma más segura)
-          docker tag ${IMAGE_ID} ${ECR_FULL_IMAGE_URI}
-          docker tag ${IMAGE_ID} ${ECR_FULL_IMAGE_URI_SHA}
-
-          # Empuja las imágenes a ECR
-          docker push ${ECR_FULL_IMAGE_URI}
-          docker push ${ECR_FULL_IMAGE_URI_SHA}
+          # Usa docker compose buildx para construir la imagen para las plataformas especificadas
+          # y empujarla directamente a ECR.
+          # La bandera --push es crucial para que la imagen se suba a ECR.
+          # La bandera --load se usaría si quisieras cargar la imagen en el demonio Docker del runner local
+          # en lugar de empujarla directamente (no es lo que queremos aquí).
+          docker buildx build \
+            --platform ${{ env.PLATFORMS }} \
+            --tag "${IMAGE_NAME}:${{ env.IMAGE_TAG }}" \
+            --tag "${IMAGE_NAME}:${{ github.sha }}" \
+            --file ./Dockerfile \
+            --push \
+            .
