@@ -11,7 +11,7 @@ env:
   SERVICE_NAME: web # Nombre del servicio en tu docker-compose.yml que quieres construir
   IMAGE_TAG: latest # Etiqueta principal de la imagen (ej. 'latest'). Puedes usar ${{ github.sha }} para el hash del commit.
   # Define las plataformas objetivo para la construcción de la imagen
-  PLATFORMS: linux/amd64,linux/arm64/v8
+  PLATFORMS: linux/arm64/v8
 
 jobs:
   build:
