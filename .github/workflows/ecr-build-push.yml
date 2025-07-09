@@ -55,6 +55,7 @@ jobs:
 
       # 6) Build & push con docker compose
       - name: Build and push Docker image
+        id: build-image
         env:
           # URI completa del repo ECR: <aws_account_id>.dkr.ecr.<region>.amazonaws.com/<repo>
           IMAGE_URI: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
