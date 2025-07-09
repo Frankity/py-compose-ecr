@@ -1,4 +1,4 @@
-zname: Build and Push Flask App to ECR (Multi‑arch)
+name: Build and Push Flask App to ECR (Multi‑arch)
 
 on:
   push:
