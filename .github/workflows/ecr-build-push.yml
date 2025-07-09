@@ -19,8 +19,14 @@ env:
   PLATFORMS: linux/amd64,linux/arm64/v8
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      fail-fast:  false
+      matrix:
+        include:
+          - platgorm: linux/arm64
+            runer: ubuntu-22.04-arm
+    runs-on: ${{matrix.runner}}
     permissions:
       contents: read
       id-token: write
@@ -60,7 +66,7 @@ jobs:
           # URI completa del repo ECR: <aws_account_id>.dkr.ecr.<region>.amazonaws.com/<repo>
           IMAGE_URI: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
         run: |
-         
+          platform=${{matrix.platform}}
           # Construye la imagen para el servicio especificado.
           # La salida de este comando a veces puede incluir el ID de la imagen.
           docker compose build ${{ env.SERVICE_NAME }}
