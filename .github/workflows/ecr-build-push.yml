@@ -59,13 +59,29 @@ jobs:
           # URI completa del repo ECR: <aws_account_id>.dkr.ecr.<region>.amazonaws.com/<repo>
           IMAGE_URI: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
         run: |
-          # Construye solo el servicio indicado y publica la imagen multi‑arch
+          IMAGE_ID="${{ steps.build-image.outputs.image_id }}"
+          if [ -z "${IMAGE_ID}" ]; then
+            echo "Error: El ID de la imagen está vacío. No se puede etiquetar ni empujar."
+            exit 1
+          fi
+
+          # Define el URI completo de la imagen ECR para la etiqueta principal
+          ECR_FULL_IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+
+          # Define el URI completo de la imagen ECR para la etiqueta con el SHA del commit
           ECR_FULL_IMAGE_URI_SHA="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
 
+                  
           docker compose build \
             --push \
             ${{ env.SERVICE_NAME }}
 
           # Etiqueta la imagen local usando su ID (la forma más segura)
+           # Etiqueta la imagen local usando su ID (la forma más segura)
+          docker tag ${IMAGE_ID} ${ECR_FULL_IMAGE_URI}
+          docker tag ${IMAGE_ID} ${ECR_FULL_IMAGE_URI_SHA}
 
+          # Empuja las imágenes a ECR
+          docker push ${ECR_FULL_IMAGE_URI}
+          docker push ${ECR_FULL_IMAGE_URI_SHA}
        
