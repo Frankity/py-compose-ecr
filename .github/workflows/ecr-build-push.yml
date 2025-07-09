@@ -60,9 +60,37 @@ jobs:
           IMAGE_URI: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
         run: |
          
+          # Construye la imagen para el servicio especificado.
+          # La salida de este comando a veces puede incluir el ID de la imagen.
           docker compose build ${{ env.SERVICE_NAME }}
 
+          # ¡ESTA ES LA PARTE CLAVE!
+          # Obtenemos el ID de la imagen recién construida usando docker images.
+          # Filtramos por las imágenes sin nombre (<none>) que a menudo son el resultado de 'docker compose build'
+          # o por el nombre esperado si lo tuviera.
+          # Ordenamos por fecha de creación descendente y tomamos el ID más reciente.
+          # 'grep $(basename ${{ github.repository }})' ayuda a filtrar por el nombre del repo
+          # si docker compose le da un nombre como 'py-compose-ecr_web'
+          IMAGE_ID=$(docker images --format "{{.ID}}\t{{.Repository}}\t{{.Tag}}" | grep "$(basename ${{ github.repository }})_${{ env.SERVICE_NAME}}" | head -n 1 | awk '{print $1}')
+
+          # Si el comando anterior no encuentra la imagen por nombre, probamos con la imagen más reciente sin tag
+          if [ -z "${IMAGE_ID}" ]; then
+            IMAGE_ID=$(docker images --filter "dangling=false" --format "{{.ID}}\t{{.CreatedAt}}" | sort -k2 -r | head -n 1 | awk '{print $1}')
+            echo "Advertencia: No se encontró la imagen por nombre. Usando la imagen construida más recientemente con ID: ${IMAGE_ID}"
+          fi
+
+          if [ -z "${IMAGE_ID}" ]; then
+            echo "Error: No se pudo obtener el ID de la imagen construida."
+            exit 1
+          fi
+
+          echo "::set-output name=image_id::${IMAGE_ID}" # Pasa el ID de la imagen como una salida del paso
+
+      - name: Tag and Push Docker image to ECR
+        run: |
+          # Obtiene el ID de la imagen del paso anterior
           IMAGE_ID="${{ steps.build-image.outputs.image_id }}"
+
           if [ -z "${IMAGE_ID}" ]; then
             echo "Error: El ID de la imagen está vacío. No se puede etiquetar ni empujar."
             exit 1
@@ -75,7 +103,6 @@ jobs:
           ECR_FULL_IMAGE_URI_SHA="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
 
           # Etiqueta la imagen local usando su ID (la forma más segura)
-           # Etiqueta la imagen local usando su ID (la forma más segura)
           docker tag ${IMAGE_ID} ${ECR_FULL_IMAGE_URI}
           docker tag ${IMAGE_ID} ${ECR_FULL_IMAGE_URI_SHA}
 
