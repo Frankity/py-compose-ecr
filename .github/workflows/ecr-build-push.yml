@@ -24,7 +24,7 @@ jobs:
       fail-fast:  false
       matrix:
         include:
-          - platgorm: linux/arm64
+          - platform: linux/arm64
             runer: ubuntu-22.04-arm
     runs-on: ${{matrix.runner}}
     permissions:
