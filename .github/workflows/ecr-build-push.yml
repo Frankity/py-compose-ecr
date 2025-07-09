@@ -64,13 +64,8 @@ jobs:
 
           docker compose build \
             --push \
-            --platform ${{ env.PLATFORMS }} \
             ${{ env.SERVICE_NAME }}
 
           # Etiqueta la imagen local usando su ID (la forma más segura)
-          docker tag ${IMAGE_ID} ${ECR_FULL_IMAGE_URI}
-          docker tag ${IMAGE_ID} ${ECR_FULL_IMAGE_URI_SHA}
 
-          # Empuja las imágenes a ECR
-          docker push ${ECR_FULL_IMAGE_URI}
-          docker push ${ECR_FULL_IMAGE_URI_SHA}
+       
