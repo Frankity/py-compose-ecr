@@ -1,4 +1,4 @@
-name: Build and Push Flask App to ECR (Multi‑arch)
+zname: Build and Push Flask App to ECR (Multi‑arch)
 
 on:
   push:
@@ -40,7 +40,7 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
-          platforms: all
+          platforms: ${{matrix.platform}}
 
       # 3) Prepara Docker Buildx
       - name: Set up Docker Buildx
@@ -66,7 +66,6 @@ jobs:
           # URI completa del repo ECR: <aws_account_id>.dkr.ecr.<region>.amazonaws.com/<repo>
           IMAGE_URI: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
         run: |
-          platform=${{matrix.platform}}
           # Construye la imagen para el servicio especificado.
           # La salida de este comando a veces puede incluir el ID de la imagen.
           docker compose build ${{ env.SERVICE_NAME }}
