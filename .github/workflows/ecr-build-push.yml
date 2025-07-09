@@ -1,65 +1,74 @@
-name: Build and Push Flask App to ECR (Multi-arch)
+name: Build and Push Flask App to ECR (Multi‑arch)
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    branches: [main]       # Ejecuta en cada push a main
+  workflow_dispatch:       # Permite lanzarlo manualmente
 
 env:
-  ECR_REPOSITORY: ${{ secrets.REPO_NAME }} # ¡IMPORTANTE! Reemplaza con el nombre exacto de tu repositorio ECR en AWS
-  SERVICE_NAME: web # Nombre del servicio en tu docker-compose.yml que quieres construir
-  IMAGE_TAG: latest # Etiqueta principal de la imagen (ej. 'latest'). Puedes usar ${{ github.sha }} para el hash del commit.
-  # Define las plataformas objetivo para la construcción de la imagen
-  PLATFORMS: linux/arm64/v8
+  # Nombre exacto de tu repositorio ECR (defínelo en GitHub Secrets)
+  ECR_REPOSITORY: ${{ secrets.REPO_NAME }}
+
+  # Servicio que quieres construir dentro de docker‑compose.yml
+  SERVICE_NAME: web
+
+  # Etiqueta principal de la imagen (cámbiala a ${{ github.sha }} si prefieres)
+  IMAGE_TAG: latest
+
+  # Plataformas objetivo (añade las que necesites)
+  PLATFORMS: linux/amd64,linux/arm64/v8
 
 jobs:
-  build:
+  build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
 
     steps:
-      - name: Checkout repository
+      # 1) Descarga el código
+      - name: Checkout source
         uses: actions/checkout@v4
 
+      # 2) Habilita emulación cross‑arch con QEMU
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+
+      # 3) Prepara Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # 4) Configura credenciales AWS
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region:            ${{ secrets.AWS_REGION }}
 
+      # 5) Login en Amazon ECR
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and Push Docker image to ECR (Multi-arch)
-        # No necesitamos un paso intermedio de 'build' y luego 'tag/push'.
-        # buildx puede construir y empujar directamente.
+      # 6) Build & push con docker compose
+      - name: Build and push Docker image
+        env:
+          # URI completa del repo ECR: <aws_account_id>.dkr.ecr.<region>.amazonaws.com/<repo>
+          IMAGE_URI: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
         run: |
-          # Obtiene el URI completo del registro ECR
-          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
-          
-          # Define el nombre completo de la imagen en ECR
-          IMAGE_NAME="${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}"
+          # Exporta variables para que docker compose resuelva ${IMAGE_URI} y ${IMAGE_TAG}
+          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
 
-          echo "Building and pushing image for platforms: ${{ env.PLATFORMS }}"
-          echo "Image name: ${IMAGE_NAME}"
-
-          # Usa docker compose buildx para construir la imagen para las plataformas especificadas
-          # y empujarla directamente a ECR.
-          # La bandera --push es crucial para que la imagen se suba a ECR.
-          # La bandera --load se usaría si quisieras cargar la imagen en el demonio Docker del runner local
-          # en lugar de empujarla directamente (no es lo que queremos aquí).
-          docker buildx build \
-            --platform ${{ env.PLATFORMS }} \
-            --tag "${IMAGE_NAME}:${{ env.IMAGE_TAG }}" \
-            --tag "${IMAGE_NAME}:${{ github.sha }}" \
-            --file ./Dockerfile \
+          # Construye solo el servicio indicado y publica la imagen multi‑arch
+          docker compose build \
             --push \
-            .
+            --platform $PLATFORMS \
+            $SERVICE_NAME
+
+          # Opcional: etiqueta adicional con el SHA del commit
+          docker tag ${IMAGE_URI}:${IMAGE_TAG} ${IMAGE_URI}:${GITHUB_SHA}
+          docker push ${IMAGE_URI}:${GITHUB_SHA}
